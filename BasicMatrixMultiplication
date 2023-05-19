@@ -1,0 +1,78 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+
+__global__ void matrixMul(int *A, int *B, int *C, int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < M && col < K) {
+        int sum = 0;
+        for (int i = 0; i < N; ++i) {
+            sum += A[row * N + i] * B[i * K + col];
+        }
+        C[row * K + col] = sum;
+    }
+}
+
+void generateMatrix(int *matrix, int rows, int cols) {
+    for (int i = 0; i < rows * cols; ++i) {
+        matrix[i] = rand() % 10;
+    }
+}
+
+void printMatrix(int *matrix, int rows, int cols) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            printf("%d ", matrix[i * cols + j]);
+        }
+        printf("\n");
+    }
+}
+
+double getElapsedTime(struct timeval start, struct timeval end) {
+    return (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+}
+
+int main() {
+    int M = 1000;  // Number of rows in matrix A
+    int N = 1000;  // Number of columns in matrix A and rows in matrix B
+    int K = 1000;  // Number of columns in matrix B
+    int *h_A = (int *)malloc(M * N * sizeof(int));
+    int *h_B = (int *)malloc(N * K * sizeof(int));
+    int *h_C = (int *)malloc(M * K * sizeof(int));
+    generateMatrix(h_A, M, N);
+    generateMatrix(h_B, N, K);
+    int *d_A, *d_B, *d_C;
+    cudaMalloc((void **)&d_A, M * N * sizeof(int));
+    cudaMalloc((void **)&d_B, N * K * sizeof(int));
+    cudaMalloc((void **)&d_C, M * K * sizeof(int));
+    cudaMemcpy(d_A, h_A, M * N * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * K * sizeof(int), cudaMemcpyHostToDevice);
+
+    dim3 blockDim(16, 16);
+    dim3 gridDim((K + blockDim.x - 1) / blockDim.x, (M + blockDim.y - 1) / blockDim.y);
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    matrixMul<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, N, K);
+
+    cudaDeviceSynchronize();
+    gettimeofday(&end, NULL);
+    double elapsedTime = getElapsedTime(start, end);
+
+    cudaMemcpy(h_C, d_C, M * K * sizeof(int), cudaMemcpyDeviceToHost);
+
+    printMatrix(h_C, M, K);
+    printf("Execution time: %.6f seconds\n", elapsedTime);
+
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    free(h_A);
+    free(h_B);
+    free(h_C);
+
+    return 0;
+}
